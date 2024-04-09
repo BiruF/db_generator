@@ -2,15 +2,17 @@ package main
 
 import (
 	"database/sql"
+	"db_generator/workflow"
 	"fmt"
 	"log"
 	"os"
+	"sync"
+	"time"
 
-	"github.com/lib/pq"
+	_ "github.com/lib/pq"
 )
 
 func main() {
-
 	connStr := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=%s TimeZone=%s",
 		os.Getenv("DATABASE_USER"), os.Getenv("DATABASE_PASSWORD"), os.Getenv("DATABASE_NAME"),
 		os.Getenv("DATABASE_HOST"), os.Getenv("DATABASE_PORT"), os.Getenv("DATABASE_SSL"),
@@ -22,29 +24,40 @@ func main() {
 	}
 	defer db.Close()
 
-	rows, err := db.Query("SELECT * FROM records")
-	if err != nil {
+	numThreads := 3
+
+	errCh := make(chan error)
+
+	var wg sync.WaitGroup
+
+	start := time.Now()
+
+	for i := 0; i < numThreads; i++ {
+		wg.Add(1)
+		go func(threadID int) {
+			defer wg.Done()
+			for j := 1 + threadID; j <= 5000000; j += numThreads {
+				key := fmt.Sprintf("example_key_%d", j)
+				err := workflow.InsertRecord(db, key)
+				if err != nil {
+					errCh <- err
+					return
+				}
+			}
+		}(i)
+	}
+
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
+
+	for err := range errCh {
 		log.Fatal(err)
 	}
-	defer rows.Close()
 
-	var (
-		id   int
-		time pq.NullTime
-		key  string
-	)
+	elapsed := time.Since(start)
+	log.Printf("Время выполнения цикла вставки записей: %s\n", elapsed)
 
-	for rows.Next() {
-		err := rows.Scan(&id, &time, &key)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("ID: %d, Time: %v, Key: %s\n", id, time.Time, key)
-	}
-
-	if err := rows.Err(); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Запрос успешно выполнен.")
+	log.Println("Все записи успешно вставлены.")
 }
