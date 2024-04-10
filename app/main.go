@@ -2,12 +2,13 @@ package main
 
 import (
 	"database/sql"
-	"db_generator/workflow"
 	"fmt"
 	"log"
 	"os"
 	"sync"
 	"time"
+
+	"db_generator/workflow"
 
 	_ "github.com/lib/pq"
 )
@@ -24,7 +25,10 @@ func main() {
 	}
 	defer db.Close()
 
-	numThreads := 3
+	// Создаем таблицы, если их нет
+	if err := workflow.CreateTables(db); err != nil {
+		log.Fatal(err)
+	}
 
 	errCh := make(chan error)
 
@@ -32,20 +36,73 @@ func main() {
 
 	start := time.Now()
 
-	for i := 0; i < numThreads; i++ {
-		wg.Add(1)
-		go func(threadID int) {
-			defer wg.Done()
-			for j := 1 + threadID; j <= 5000000; j += numThreads {
-				key := fmt.Sprintf("example_key_%d", j)
-				err := workflow.InsertRecord(db, key)
-				if err != nil {
-					errCh <- err
-					return
-				}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 1; j <= 100000; j++ {
+			key := int64(j)
+
+			instance := workflow.Instance{
+				Timestamp:         time.Now(),
+				StartTimestamp:    time.Now(),
+				EndTimestamp:      sql.NullTime{},
+				Key:               key,
+				WorkflowKey:       key,
+				CallbackPerformed: false,
 			}
-		}(i)
-	}
+
+			err := workflow.InsertInstance(db, instance)
+			if err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 1; j <= 100000; j++ {
+			key := int64(j)
+
+			io := workflow.InputOutput{
+				Timestamp: time.Now(),
+				Key:       key,
+				Input:     "some_input",
+				Output:    "some_output",
+			}
+
+			err := workflow.InsertInputOutput(db, io)
+			if err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 1; j <= 100000; j++ {
+			key := int64(j)
+
+			job := workflow.Job{
+				Timestamp:   time.Now(),
+				Key:         key,
+				WorkflowKey: key,
+				Output:      "some_output",
+				Status:      1,
+				StartTS:     sql.NullTime{Time: time.Now(), Valid: true},
+				EndTS:       sql.NullTime{},
+			}
+
+			err := workflow.InsertJob(db, job)
+			if err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
 
 	go func() {
 		wg.Wait()
@@ -57,7 +114,7 @@ func main() {
 	}
 
 	elapsed := time.Since(start)
-	log.Printf("Время выполнения цикла вставки записей: %s\n", elapsed)
 
+	log.Printf("Время выполнения цикла вставки записей: %s\n", elapsed)
 	log.Println("Все записи успешно вставлены.")
 }
