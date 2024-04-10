@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 )
 
@@ -41,7 +42,6 @@ type Job struct {
 	EndTS       sql.NullTime
 }
 
-// Функция для вставки записей в таблицу workflow_instances
 func InsertInstance(db *sql.DB, instance Instance) error {
 	_, err := db.Exec(`
         INSERT INTO workflow_instances 
@@ -54,7 +54,6 @@ func InsertInstance(db *sql.DB, instance Instance) error {
 	return err
 }
 
-// Функция для вставки записей в таблицу workflows_input_output
 func InsertInputOutput(db *sql.DB, io InputOutput) error {
 	_, err := db.Exec(`
         INSERT INTO workflows_input_output 
@@ -64,7 +63,6 @@ func InsertInputOutput(db *sql.DB, io InputOutput) error {
 	return err
 }
 
-// Функция для вставки записей в таблицу workflows_jobs
 func InsertJob(db *sql.DB, job Job) error {
 	_, err := db.Exec(`
         INSERT INTO workflows_jobs 
@@ -75,7 +73,6 @@ func InsertJob(db *sql.DB, job Job) error {
 }
 
 func CreateTables(db *sql.DB) error {
-	// SQL запросы для создания таблиц
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS workflow_instances (
 			ts                TIMESTAMP NOT NULL,
@@ -112,7 +109,6 @@ func CreateTables(db *sql.DB) error {
 		)`,
 	}
 
-	// Выполнение каждого SQL запроса
 	for _, query := range queries {
 		_, err := db.Exec(query)
 		if err != nil {
@@ -121,4 +117,50 @@ func CreateTables(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func GetDatabaseSize(db *sql.DB) (string, error) {
+	var dbSize string
+	err := db.QueryRow("SELECT pg_size_pretty(pg_database_size(current_database()))").Scan(&dbSize)
+	if err != nil {
+		return "", err
+	}
+	return dbSize, nil
+}
+
+func GetTableSize(db *sql.DB, tableName string) (string, error) {
+	var tableSize string
+	query := fmt.Sprintf("SELECT pg_size_pretty(pg_total_relation_size('%s'))", tableName)
+	err := db.QueryRow(query).Scan(&tableSize)
+	if err != nil {
+		return "", err
+	}
+	return tableSize, nil
+}
+
+func ClearDatabase(db *sql.DB) error {
+	queries := []string{
+		"DELETE FROM workflow_instances",
+		"DELETE FROM workflows_input_output",
+		"DELETE FROM workflows_jobs",
+	}
+
+	for _, query := range queries {
+		_, err := db.Exec(query)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func GetRecordCount(db *sql.DB, tableName string) (int, error) {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
+	err := db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
