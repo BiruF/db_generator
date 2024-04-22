@@ -1,176 +1,54 @@
 package main
 
 import (
-	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/schollz/progressbar/v3"
 
-	"db_generator/workflow"
-
-	_ "github.com/lib/pq"
+	"db_generator/instance"
+	"db_generator/pkg/db"
 )
 
 func main() {
-	connStr := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=%s TimeZone=%s",
-		os.Getenv("DATABASE_USER"), os.Getenv("DATABASE_PASSWORD"), os.Getenv("DATABASE_NAME"),
-		os.Getenv("DATABASE_HOST"), os.Getenv("DATABASE_PORT"), os.Getenv("DATABASE_SSL"),
-		os.Getenv("DATABASE_TIMEZONE"))
+	fs := flag.NewFlagSet("instances", flag.ExitOnError)
+	instancesTotal := fs.Int64("instance_total", 1_000_000, "Total workflow instances to generate")
+	wfID := fs.Int64("wfID", 2251799818569927, "ID of the workflow to generate")
+	batchSize := fs.Int64("batch_size", 100_000, "Batch size for DB insert")
+	deltaRecord := fs.Duration("delta_record", 5*time.Millisecond, "Delta between records in batch")
+	fs.Parse(os.Args[1:])
 
-	db, err := sql.Open("postgres", connStr)
+	dbConn, err := db.SetupDBConnection()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error setting up database connection: %v", err)
 	}
-	defer db.Close()
+	defer dbConn.Close()
 
-	if err := workflow.CreateTables(db); err != nil {
-		log.Fatal(err)
-	}
+	d := db.New(dbConn)
 
-	if err := workflow.ClearDatabase(db); err != nil {
-		log.Fatal(err)
+	if err := d.CreateTables(); err != nil {
+		log.Fatalf("Error creating tables: %v", err)
 	}
 
-	errCh := make(chan error)
-	doneCh := make(chan struct{})
-
-	var countRecords int = 100000
-
-	var wg sync.WaitGroup
-
-	var bars []*progressbar.ProgressBar
-	for i := 0; i < 3; i++ {
-		bar := progressbar.NewOptions(countRecords,
-			progressbar.OptionSetDescription(fmt.Sprintf("Inserting Records")),
-			progressbar.OptionSetWriter(os.Stderr),
-			progressbar.OptionShowCount(),
-			progressbar.OptionShowIts(),
-			progressbar.OptionThrottle(65*time.Millisecond),
-		)
-		bars = append(bars, bar)
+	if err := d.CreateUniqueConstraint(); err != nil {
+		log.Fatalf("Error creating unique constraint: %v", err)
 	}
 
-	go func() {
-		defer close(doneCh)
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				instanceCount, err := workflow.GetRecordCount(db, "workflow_instances")
-				if err != nil {
-					log.Println(err)
-				}
-				ioCount, err := workflow.GetRecordCount(db, "workflows_input_output")
-				if err != nil {
-					log.Println(err)
-				}
-				jobCount, err := workflow.GetRecordCount(db, "workflows_jobs")
-				if err != nil {
-					log.Println(err)
-				}
-				log.Printf("Записи в БД: instances: %d, input/output: %d, jobs: %d\n", instanceCount, ioCount, jobCount)
-			case <-doneCh:
-				return
-			}
-		}
-	}()
-
-	start := time.Now()
-
-	wg.Add(3)
-	for i := 0; i < 3; i++ {
-		go func(index int) {
-			defer wg.Done()
-			bar := bars[index]
-			for j := 1; j <= int(countRecords); j++ {
-				key := int64(j)
-
-				switch index {
-				case 0:
-					instance := workflow.Instance{
-						Timestamp:         time.Now(),
-						StartTimestamp:    time.Now(),
-						EndTimestamp:      sql.NullTime{},
-						Key:               key,
-						WorkflowKey:       key,
-						CallbackPerformed: false,
-					}
-					if err := workflow.InsertInstance(db, instance); err != nil {
-						errCh <- err
-						return
-					}
-				case 1:
-					io := workflow.InputOutput{
-						Timestamp: time.Now(),
-						Key:       key,
-						Input:     "some_input",
-						Output:    "some_output",
-					}
-					if err := workflow.InsertInputOutput(db, io); err != nil {
-						errCh <- err
-						return
-					}
-				case 2:
-					job := workflow.Job{
-						Timestamp:   time.Now(),
-						Key:         key,
-						WorkflowKey: key,
-						Output:      "some_output",
-						Status:      1,
-						StartTS:     sql.NullTime{Time: time.Now(), Valid: true},
-						EndTS:       sql.NullTime{},
-					}
-					if err := workflow.InsertJob(db, job); err != nil {
-						errCh <- err
-						return
-					}
-				}
-				bar.Add(1)
-			}
-		}(i)
+	if err := d.CreateWorkflowInputOutputTable(); err != nil {
+		log.Fatalf("Error creating workflows_input_output table: %v", err)
 	}
 
-	wg.Wait()
-
-	close(errCh)
-
-	for err := range errCh {
-		log.Println("Ошибка:", err)
+	if err := d.ClearDatabase(); err != nil {
+		log.Fatalf("Error clearing database: %v", err)
 	}
 
-	log.Println("Все записи успешно вставлены.")
-
-	elapsed := time.Since(start)
-	log.Printf("Время выполнения вставки записей: %s\n", elapsed)
-
-	dbSize, err := workflow.GetDatabaseSize(db)
-	if err != nil {
-		log.Fatal(err)
+	bar := progressbar.Default(int64(*instancesTotal))
+	if err := instance.Generator(d, *instancesTotal, *wfID, bar, *batchSize, *deltaRecord, 10); err != nil {
+		log.Fatalf("Error generating data: %v", err)
 	}
-	log.Printf("Размер базы данных: %s\n", dbSize)
 
-	instanceTableSize, err := workflow.GetTableSize(db, "workflow_instances")
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Размер таблицы 'workflow_instances': %s\n", instanceTableSize)
-
-	ioTableSize, err := workflow.GetTableSize(db, "workflows_input_output")
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Размер таблицы 'workflows_input_output': %s\n", ioTableSize)
-
-	jobTableSize, err := workflow.GetTableSize(db, "workflows_jobs")
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Размер таблицы 'workflows_jobs': %s\n", jobTableSize)
-
-	log.Println("Все записи успешно вставлены.")
+	fmt.Println("Data generation completed successfully!")
 }
