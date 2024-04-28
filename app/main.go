@@ -5,20 +5,18 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
-	"github.com/schollz/progressbar/v3"
-
+	"db_generator/input_output"
 	"db_generator/instance"
 	"db_generator/pkg/db"
+
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
 	fs := flag.NewFlagSet("instances", flag.ExitOnError)
-	instancesTotal := fs.Int64("instance_total", 1_000_000, "Total workflow instances to generate")
-	wfID := fs.Int64("wfID", 2251799818569927, "ID of the workflow to generate")
-	batchSize := fs.Int64("batch_size", 100_000, "Batch size for DB insert")
-	deltaRecord := fs.Duration("delta_record", 5*time.Millisecond, "Delta between records in batch")
+
+	connStr := os.Getenv("DATABASE_URL")
 	fs.Parse(os.Args[1:])
 
 	dbConn, err := db.SetupDBConnection()
@@ -27,7 +25,7 @@ func main() {
 	}
 	defer dbConn.Close()
 
-	d := db.New(dbConn)
+	d := db.New(dbConn, connStr)
 
 	if err := d.CreateTables(); err != nil {
 		log.Fatalf("Error creating tables: %v", err)
@@ -45,9 +43,16 @@ func main() {
 		log.Fatalf("Error clearing database: %v", err)
 	}
 
-	bar := progressbar.Default(int64(*instancesTotal))
-	if err := instance.Generator(d, *instancesTotal, *wfID, bar, *batchSize, *deltaRecord, 10); err != nil {
-		log.Fatalf("Error generating data: %v", err)
+	app := &cli.App{
+		Commands: []*cli.Command{
+			instance.Cmd(d),
+			input_output.Cmd(),
+		},
+	}
+
+	err = app.Run(os.Args)
+	if err != nil {
+		log.Fatalf("Error running the application: %v", err)
 	}
 
 	fmt.Println("Data generation completed successfully!")

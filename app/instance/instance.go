@@ -4,11 +4,14 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 	"runtime"
 	"sync"
 	"time"
 
+	_ "github.com/lib/pq"
 	"github.com/schollz/progressbar/v3"
+	"github.com/urfave/cli/v2"
 
 	db "db_generator/pkg/db"
 )
@@ -100,7 +103,7 @@ func CreateInstance(startTime, endTime time.Time, wfID int64) db.Instance {
 	}
 }
 
-func Generator(d *db.DB, instancesTotal, wfID int64, bar *progressbar.ProgressBar, batchSize int64, deltaRecord time.Duration, jobsPerInstance int) error {
+func Generator(d *db.DB, instancesTotal int64, bar *progressbar.ProgressBar, batchSize int64, deltaRecord time.Duration, jobsPerInstance int64, workersNum int) error {
 	currentRowCount := CurrentRowCount(d)
 
 	if currentRowCount >= instancesTotal {
@@ -128,18 +131,18 @@ func Generator(d *db.DB, instancesTotal, wfID int64, bar *progressbar.ProgressBa
 		defer close(instancesCh)
 		for i := int64(0); i < instancesTotal-currentRowCount; i++ {
 			startTime := time.Now().Add(-deltaRecord * time.Duration(i))
-			instance := CreateInstance(startTime, startTime, wfID)
+			instance := CreateInstance(startTime, startTime, 5)
 			instancesCh <- instance
 		}
 	}()
 
 	var wg sync.WaitGroup
-	for i := 0; i < runtime.NumCPU(); i++ {
+	for i := 0; i < workersNum; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for instance := range instancesCh {
-				if err := d.InsertInstance(instance); err != nil {
+				if err := d.InsertInstances([]db.Instance{instance}); err != nil {
 					log.Printf("Error inserting instance: %v", err)
 					continue
 				}
@@ -149,7 +152,7 @@ func Generator(d *db.DB, instancesTotal, wfID int64, bar *progressbar.ProgressBa
 					log.Println(updateProgressBar(instanceCount))
 				}
 
-				for j := 0; j < jobsPerInstance; j++ {
+				for j := 0; j < int(jobsPerInstance); j++ {
 					job := createJob(instance)
 					if err := d.InsertJob(job); err != nil {
 						log.Printf("Error inserting job: %v", err)
@@ -203,4 +206,64 @@ func Generator(d *db.DB, instancesTotal, wfID int64, bar *progressbar.ProgressBa
 	}
 
 	return nil
+}
+
+func Cmd(d *db.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "instance",
+		Usage: "generate workflow instances",
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:  "workers",
+				Value: runtime.NumCPU() / 2,
+				Usage: "Number of parallel workers",
+			},
+			&cli.Int64Flag{
+				Name:  "batch_size",
+				Value: 100_000,
+				Usage: "Batch size for DB insert",
+			},
+			&cli.Int64Flag{
+				Name:  "instances_total",
+				Value: 1_000_000,
+				Usage: "Total number of instances to generate",
+			},
+			&cli.DurationFlag{
+				Name:  "delta_record",
+				Value: 1 * time.Hour,
+				Usage: "Time duration between records",
+			},
+			&cli.Int64Flag{
+				Name:  "jobs_per_instance",
+				Value: 10,
+				Usage: "Number of jobs per instance",
+			},
+		},
+		Action: func(c *cli.Context) error {
+			workersNum := c.Int("workers")
+			batchSize := c.Int64("batch_size")
+			instancesTotal := c.Int64("instances_total")
+			deltaRecord := c.Duration("delta_record")
+			jobsPerInstance := c.Int64("jobs_per_instance")
+
+			bar := createProgressBar(int(instancesTotal))
+
+			err := Generator(d, instancesTotal, bar, batchSize, deltaRecord, jobsPerInstance, workersNum)
+			if err != nil {
+				log.Printf("Error generating workflow instances: %v", err)
+				return err
+			}
+
+			return nil
+		},
+	}
+}
+
+func createProgressBar(total int) *progressbar.ProgressBar {
+	return progressbar.NewOptions(total,
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetDescription("Generating..."),
+	)
 }

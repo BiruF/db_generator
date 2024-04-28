@@ -1,21 +1,10 @@
 version: '3.0'
 
 services:
-  db:
-    build: ./database
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: generator
-    ports:
-      - "5004:5432"
-
   app:
     build: ./app
     env_file:
       - .env
-    depends_on:
-      - db
     ports:
       - "5005:5005"
     

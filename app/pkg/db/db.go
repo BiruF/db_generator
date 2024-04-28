@@ -1,12 +1,14 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v4"
 	_ "github.com/lib/pq"
 )
 
@@ -48,23 +50,39 @@ type Job struct {
 
 type DB struct {
 	*sql.DB
+	ConnectionString string
 }
 
-func New(db *sql.DB) *DB {
-	return &DB{DB: db}
+func New(db *sql.DB, connStr string) *DB {
+	return &DB{DB: db, ConnectionString: connStr}
 }
 
-func (d *DB) InsertInstance(instance Instance) error {
-	_, err := d.Exec(`
-        INSERT INTO workflow_instances 
-        (ts, startts, endts, key, workflowkey, alternateid1, alternateid2, action, callbackurl, operationstatus, completionstatus, callbackperformed, category, msisdn, imsi, errorcode) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        ON CONFLICT (ts, key) DO NOTHING`,
-		instance.Timestamp, instance.StartTimestamp, instance.EndTimestamp, instance.Key, instance.WorkflowKey,
-		instance.AlternateID1, instance.AlternateID2, instance.Action, instance.CallbackURL, instance.OperationStatus,
-		instance.CompletionStatus, instance.CallbackPerformed, instance.Category, instance.MSISDN, instance.IMSI,
-		instance.ErrorCode)
-	return err
+func (d *DB) InsertInstances(instances []Instance) error {
+	conn, err := pgx.Connect(context.Background(), d.ConnectionString)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(context.Background())
+
+	stmt := `INSERT INTO workflow_instances 
+             (ts, startts, endts, key, workflowkey, alternateid1, alternateid2, action, callbackurl, operationstatus, completionstatus, callbackperformed, category, msisdn, imsi, errorcode) 
+             VALUES `
+	var args []interface{}
+	for _, instance := range instances {
+		stmt += "($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16),"
+		args = append(args, instance.Timestamp, instance.StartTimestamp, instance.EndTimestamp, instance.Key, instance.WorkflowKey,
+			instance.AlternateID1, instance.AlternateID2, instance.Action, instance.CallbackURL, instance.OperationStatus,
+			instance.CompletionStatus, instance.CallbackPerformed, instance.Category, instance.MSISDN, instance.IMSI,
+			instance.ErrorCode)
+	}
+	stmt = stmt[:len(stmt)-1]
+
+	_, err = conn.Exec(context.Background(), stmt, args...)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (d *DB) InsertInputOutput(io InputOutput) error {
@@ -77,12 +95,22 @@ func (d *DB) InsertInputOutput(io InputOutput) error {
 }
 
 func (d *DB) InsertJob(job Job) error {
-	_, err := d.Exec(`
+	conn, err := pgx.Connect(context.Background(), d.ConnectionString)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(context.Background())
+
+	_, err = conn.Exec(context.Background(), `
         INSERT INTO workflows_jobs 
         (ts, key, workflow_key, output, status, startts, endts) 
         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		job.Timestamp, job.Key, job.WorkflowKey, job.Output, job.Status, job.StartTS, job.EndTS)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (d *DB) CreateTables() error {
@@ -151,10 +179,10 @@ func (d *DB) GetDatabaseSize() (string, error) {
 }
 
 func SetupDBConnection() (*sql.DB, error) {
-	connStr := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=%s TimeZone=%s",
+	connStr := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=%s TimeZone=%s schema=%s",
 		os.Getenv("DATABASE_USER"), os.Getenv("DATABASE_PASSWORD"), os.Getenv("DATABASE_NAME"),
 		os.Getenv("DATABASE_HOST"), os.Getenv("DATABASE_PORT"), os.Getenv("DATABASE_SSL"),
-		os.Getenv("DATABASE_TIMEZONE"))
+		os.Getenv("DATABASE_TIMEZONE"), os.Getenv("DATABASE_SCHEMA"))
 
 	dbConn, err := sql.Open("postgres", connStr)
 	if err != nil {
