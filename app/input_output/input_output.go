@@ -4,13 +4,13 @@ import (
 	"context"
 	_ "embed"
 	"log"
-	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/urfave/cli/v2"
 )
 
@@ -38,11 +38,11 @@ func jsonStream(workersNum int, batchSize int64) chan pgx.CopyFromSource {
 }
 
 func generator(workersNum int, batchSize int64) error {
-	pgxConn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	pool, err := pgxpool.Connect(context.Background(), "postgres://postgres:sQHiQuMQHOSwikBfFMnpD3i4k9Bq1KMn4kIiL7yjX8BGGJujSt2OOqJbm74qjSbY@172.16.161.12:5432/activation?sslmode=disable&timezone=Europe%2FMoscow&search_path=zeebe")
 	if err != nil {
 		log.Fatalf("Error connecting to database: %v", err)
 	}
-	defer pgxConn.Close(context.Background())
+	defer pool.Close()
 
 	sourcesCh := jsonStream(workersNum, batchSize)
 
@@ -51,7 +51,7 @@ func generator(workersNum int, batchSize int64) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			processCopy(sourcesCh, pgxConn)
+			processCopy(sourcesCh, pool)
 		}()
 	}
 
@@ -67,10 +67,16 @@ func generator(workersNum int, batchSize int64) error {
 	return nil
 }
 
-func processCopy(sourceCh chan pgx.CopyFromSource, pgxConn *pgx.Conn) {
+func processCopy(sourceCh chan pgx.CopyFromSource, pool *pgxpool.Pool) {
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		log.Fatalf("Error acquiring connection from pool: %v", err)
+	}
+	defer conn.Release()
+
 	for source := range sourceCh {
 		log.Println("Copying data to database...")
-		copyCount, queryErr := pgxConn.CopyFrom(context.Background(),
+		copyCount, queryErr := conn.Conn().CopyFrom(context.Background(),
 			pgx.Identifier{"workflows_input_output"},
 			[]string{"ts", "key", "input", "output"},
 			source,

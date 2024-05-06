@@ -1,57 +1,79 @@
 package instance
 
 import (
-	"database/sql"
-	"fmt"
+	"context"
 	"log"
-	"os"
 	"runtime"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	_ "github.com/lib/pq"
-	"github.com/schollz/progressbar/v3"
+	"net/http"
+
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/urfave/cli/v2"
 
-	db "db_generator/pkg/db"
+	"db_generator/pkg/db"
 )
 
-func CurrentRowCount(d *db.DB) int64 {
-	count, err := d.GetRecordCount("workflow_instances")
+var (
+	AddedRowCount atomic.Int64
+)
+
+func currentRowCount() int64 {
+	log.Println("Asking current row count...")
+	conn, err := db.GetConnection()
 	if err != nil {
-		log.Panicf("Error retrieving current row count: %v", err)
+		log.Panicf("Error getting connection: %v", err)
 	}
-	log.Println("Current row count:", count)
-	return int64(count)
+	defer conn.Close()
+
+	// Получаем последнее время
+	latestTimestamp := latestTimestamp()
+
+	var current int64
+	if err := conn.QueryRow("select count(*) from workflow_instances where ts < $1", latestTimestamp).Scan(&current); err != nil {
+		log.Panicf("Error getting current row count: %v", err)
+	}
+
+	log.Println("Current row count is", current)
+	return current
 }
 
-func LatestTimestamp(d *db.DB) (time.Time, error) {
+func latestTimestamp() time.Time {
+	log.Println("Latest row in database...")
+
+	conn, err := db.GetConnection()
+	if err != nil {
+		log.Panicf("Error getting connection: %v", err)
+	}
+	defer conn.Close()
 	var latest time.Time
-	err := d.QueryRow("SELECT MAX(ts) FROM workflow_instances").Scan(&latest)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Println("No rows in the table")
-			return time.Time{}, nil
-		}
-		return time.Time{}, err
+	if err := conn.QueryRow("select ts from workflow_instances order by ts limit 1").Scan(&latest); err != nil {
+		log.Printf("Error getting current row count: %v", err)
+		latest = time.Now()
 	}
+
 	log.Println("Latest row is", latest)
-	return latest, nil
+	return latest
 }
 
-func timeBuckets(endTime time.Time, generateCount, batchSize int64, deltaRecord time.Duration, wfID int64) chan db.Instance {
-	ch := make(chan db.Instance)
+func timeBuckets(endTime time.Time, generateCount, batchSize int64, deltaRecord time.Duration, wfID int64) chan pgx.CopyFromSource {
+	ch := make(chan pgx.CopyFromSource)
 
 	go func() {
 		defer close(ch)
-		for i := int64(0); i < generateCount; i++ {
-			startTime := endTime.Add(-deltaRecord * time.Duration(i))
+		for AddedRowCount.Load() < generateCount {
+			interval := time.Duration(batchSize) * deltaRecord
+			startTime := endTime.Add(-interval)
 
-			ch <- CreateInstance(startTime, endTime, wfID)
+			log.Printf("Generating bucket from %v to %v with %d rows\n", startTime.Format("2006-01-02 15:04:05.000"), endTime.Format("2006-01-02 15:04:05.000"), batchSize)
+			ch <- сopyFromRows(startTime, endTime, deltaRecord, wfID)
 
-			if (i+1)%batchSize == 0 {
-				endTime = startTime
-			}
+			endTime = startTime
 		}
 
 		log.Println("Done generating buckets")
@@ -60,210 +82,140 @@ func timeBuckets(endTime time.Time, generateCount, batchSize int64, deltaRecord 
 	return ch
 }
 
-func createJob(instance db.Instance) db.Job {
-	job := db.Job{
-		Timestamp:   instance.Timestamp,
-		Key:         instance.Key,
-		WorkflowKey: instance.WorkflowKey,
-		Output:      "some_output",
-		Status:      1,
-		StartTS:     sql.NullTime{Time: instance.StartTimestamp},
-		EndTS:       instance.EndTimestamp,
+func processCopy(sourceCh chan pgx.CopyFromSource, pool *pgxpool.Pool) {
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		log.Panicf("Error acquiring connection from pool: %v", err)
 	}
+	defer conn.Release()
 
-	return job
-}
+	for source := range sourceCh {
+		start := time.Now()
 
-func CreateInstance(startTime, endTime time.Time, wfID int64) db.Instance {
-	key := startTime.Unix()
-
-	endTimestamp := sql.NullTime{}
-	if !endTime.IsZero() {
-		endTimestamp.Time = endTime
-		endTimestamp.Valid = true
-	}
-
-	return db.Instance{
-		Timestamp:         startTime,
-		StartTimestamp:    startTime,
-		EndTimestamp:      endTimestamp,
-		Key:               key,
-		WorkflowKey:       key,
-		AlternateID1:      sql.NullString{String: "some_id", Valid: true},
-		AlternateID2:      sql.NullString{String: "some_id", Valid: true},
-		Action:            sql.NullInt32{Int32: 0, Valid: true},
-		CallbackURL:       sql.NullString{String: "some_url", Valid: true},
-		OperationStatus:   sql.NullInt32{Int32: 1, Valid: true},
-		CompletionStatus:  sql.NullInt32{Int32: 1, Valid: true},
-		CallbackPerformed: true,
-		Category:          sql.NullString{String: "some_category", Valid: true},
-		MSISDN:            sql.NullString{String: "some_msisdn", Valid: true},
-		IMSI:              sql.NullString{String: "some_imsi", Valid: true},
-		ErrorCode:         sql.NullString{String: "some_error", Valid: true},
-	}
-}
-
-func Generator(d *db.DB, instancesTotal int64, bar *progressbar.ProgressBar, batchSize int64, deltaRecord time.Duration, jobsPerInstance int64, workersNum int) error {
-	currentRowCount := CurrentRowCount(d)
-
-	if currentRowCount >= instancesTotal {
-		log.Printf("Nothing to generate, current row count is %d\n", currentRowCount)
-		return nil
-	}
-	log.Printf("Generating %d rows\n", instancesTotal-currentRowCount)
-
-	startTime := time.Now()
-
-	updateProgressBar := func(processedCount int64) string {
-		elapsedTime := time.Since(startTime).Seconds()
-		rate := float64(processedCount) / elapsedTime
-		bar.Set(int(processedCount))
-		bar.Describe(fmt.Sprintf("%.2f records/sec", rate))
-		bar.RenderBlank()
-
-		return fmt.Sprintf("Processed %d records", processedCount)
-	}
-	var instanceCount, jobCount, inputOutputCount int64
-
-	instancesCh := make(chan db.Instance)
-
-	go func() {
-		defer close(instancesCh)
-		for i := int64(0); i < instancesTotal-currentRowCount; i++ {
-			startTime := time.Now().Add(-deltaRecord * time.Duration(i))
-			instance := CreateInstance(startTime, startTime, 5)
-			instancesCh <- instance
+		copyCount, err := conn.CopyFrom(
+			context.Background(),
+			pgx.Identifier{"workflow_instances"},
+			[]string{"ts", "startts", "endts", "key", "workflowkey", "alternateid1", "alternateid2", "action", "callbackurl", "operationstatus", "completionstatus", "callbackperformed", "category", "msisdn", "imsi", "errorcode"},
+			source,
+		)
+		if err != nil {
+			if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+				log.Printf("Skipping insertion of duplicate key: %v", pgErr.Message)
+				continue
+			}
+			log.Panicf("Error copying data to database: %v", err)
 		}
-	}()
+
+		end := time.Now()
+		duration := end.Sub(start)
+
+		log.Printf("Copied %d rows in %v (%f rows/sec)\n", copyCount, duration, float64(copyCount)/duration.Seconds())
+	}
+}
+
+func generator(instancesTotal int64, workersNum int, wfID int64, batchSize int64, deltaRecord time.Duration) error {
+	pool, err := pgxpool.Connect(context.Background(), "postgres://postgres:sQHiQuMQHOSwikBfFMnpD3i4k9Bq1KMn4kIiL7yjX8BGGJujSt2OOqJbm74qjSbY@172.16.161.12:5432/activation?sslmode=disable&timezone=Europe%2FMoscow&search_path=zeebe")
+	if err != nil {
+		log.Fatalf("Error getting connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	latest := latestTimestamp()
+	generateCount := instancesTotal - currentRowCount()
+	sourcesCh := timeBuckets(latest, generateCount, batchSize, deltaRecord, wfID)
 
 	var wg sync.WaitGroup
 	for i := 0; i < workersNum; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for instance := range instancesCh {
-				if err := d.InsertInstances([]db.Instance{instance}); err != nil {
-					log.Printf("Error inserting instance: %v", err)
-					continue
-				}
-				instanceCount++
-				inputOutputCount++
-				if instanceCount%1000 == 0 {
-					log.Println(updateProgressBar(instanceCount))
-				}
-
-				for j := 0; j < int(jobsPerInstance); j++ {
-					job := createJob(instance)
-					if err := d.InsertJob(job); err != nil {
-						log.Printf("Error inserting job: %v", err)
-						continue
-					}
-					jobCount++
-				}
-			}
+			processCopy(sourcesCh, pool)
 		}()
 	}
 
-	progressTimer := time.NewTicker(5 * time.Second)
-	defer progressTimer.Stop()
-
-	go func() {
-		for range progressTimer.C {
-			log.Println(updateProgressBar(instanceCount))
-		}
-	}()
-
+	start := time.Now()
 	wg.Wait()
 
-	fmt.Println()
-
-	elapsedTime := time.Since(startTime)
-	log.Printf("Time taken to populate the database: %v", elapsedTime)
-
-	log.Printf("Inserted %d records into workflow_instances table\n", instanceCount)
-	log.Printf("Inserted %d records into jobs table\n", jobCount)
-	log.Printf("Inserted %d records into input_output table\n", inputOutputCount)
-
-	instanceSize, err := d.GetTableSize("workflow_instances")
-	if err != nil {
-		log.Printf("Error retrieving size of instance table: %v\n", err)
-	} else {
-		log.Printf("Size of instance table: %s\n", instanceSize)
-	}
-
-	jobSize, err := d.GetTableSize("workflows_jobs")
-	if err != nil {
-		log.Printf("Error retrieving size of job table: %v\n", err)
-	} else {
-		log.Printf("Size of job table: %s\n", jobSize)
-	}
-
-	inputOutputSize, err := d.GetTableSize("workflows_input_output")
-	if err != nil {
-		log.Printf("Error retrieving size of input_output table: %v\n", err)
-	} else {
-		log.Printf("Size of input_output table: %s\n", inputOutputSize)
-	}
+	took := time.Since(start)
+	log.Printf("Data generation completed successfully in %v", took)
 
 	return nil
 }
 
-func Cmd(d *db.DB) *cli.Command {
+func Cmd() *cli.Command {
 	return &cli.Command{
-		Name:  "instance",
-		Usage: "generate workflow instances",
+		Name: "instances",
 		Flags: []cli.Flag{
+			&cli.Int64Flag{
+				Name:  "instance_total",
+				Value: 1_000_000_000,
+				Usage: "Total workflow that we assume after generation",
+			},
 			&cli.IntFlag{
 				Name:  "workers",
 				Value: runtime.NumCPU() / 2,
-				Usage: "Number of parallel workers",
+				Usage: "Number of parallel requests to make",
+			},
+			&cli.Int64Flag{
+				Name:  "wfID",
+				Value: 2251799813831553,
+				Usage: "ID of the workflow to generate",
 			},
 			&cli.Int64Flag{
 				Name:  "batch_size",
 				Value: 100_000,
 				Usage: "Batch size for DB insert",
 			},
-			&cli.Int64Flag{
-				Name:  "instances_total",
-				Value: 1_000_000,
-				Usage: "Total number of instances to generate",
-			},
 			&cli.DurationFlag{
 				Name:  "delta_record",
-				Value: 1 * time.Hour,
-				Usage: "Time duration between records",
-			},
-			&cli.Int64Flag{
-				Name:  "jobs_per_instance",
-				Value: 10,
-				Usage: "Number of jobs per instance",
+				Value: 5 * time.Millisecond,
+				Usage: "Delta between records in batch",
 			},
 		},
-		Action: func(c *cli.Context) error {
-			workersNum := c.Int("workers")
-			batchSize := c.Int64("batch_size")
-			instancesTotal := c.Int64("instances_total")
-			deltaRecord := c.Duration("delta_record")
-			jobsPerInstance := c.Int64("jobs_per_instance")
+		Action: func(cCtx *cli.Context) error {
+			instancesTotal := cCtx.Int64("instance_total")
+			workersNum := cCtx.Int("workers")
+			wfID := cCtx.Int64("wfID")
+			batchSize := cCtx.Int64("batch_size")
+			deltaRecord := cCtx.Duration("delta_record")
 
-			bar := createProgressBar(int(instancesTotal))
-
-			err := Generator(d, instancesTotal, bar, batchSize, deltaRecord, jobsPerInstance, workersNum)
-			if err != nil {
-				log.Printf("Error generating workflow instances: %v", err)
-				return err
-			}
-
-			return nil
+			return generator(instancesTotal, workersNum, wfID, batchSize, deltaRecord)
 		},
 	}
 }
 
-func createProgressBar(total int) *progressbar.ProgressBar {
-	return progressbar.NewOptions(total,
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionEnableColorCodes(true),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetDescription("Generating..."),
-	)
+func сopyFromRows(startTime, endTime time.Time, delta time.Duration, wfID int64) pgx.CopyFromSource {
+	return &copyFromRows{
+		startTs: startTime,
+		endTime: endTime,
+		delta:   delta,
+		wfID:    wfID,
+	}
+}
+
+type copyFromRows struct {
+	startTs time.Time
+	endTime time.Time
+	delta   time.Duration
+	wfID    int64
+}
+
+func (ctr *copyFromRows) Next() bool {
+	return ctr.startTs.Before(ctr.endTime)
+}
+
+func (ctr *copyFromRows) Values() ([]interface{}, error) {
+	ctr.startTs = ctr.startTs.Add(ctr.delta)
+	AddedRowCount.Add(1)
+
+	endTs := ctr.startTs.Add(10 * time.Second)
+	key := ctr.startTs.UnixNano()
+	errorCode := http.StatusNotFound
+	errorCodeStr := strconv.Itoa(errorCode)
+
+	return []interface{}{ctr.startTs, ctr.startTs, endTs, key, ctr.wfID, "some_id", "some_id", int32(0), "", int32(1), int32(1), true, "80", "01_generated", "401015699499878", errorCodeStr}, nil
+}
+
+func (ctr *copyFromRows) Err() error {
+	return nil
 }

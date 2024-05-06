@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 	_ "github.com/lib/pq"
 )
 
@@ -52,6 +55,10 @@ type DB struct {
 	*sql.DB
 	ConnectionString string
 }
+
+const (
+	reportInterval = 30 * time.Second
+)
 
 func New(db *sql.DB, connStr string) *DB {
 	return &DB{DB: db, ConnectionString: connStr}
@@ -114,6 +121,8 @@ func (d *DB) InsertJob(job Job) error {
 }
 
 func (d *DB) CreateTables() error {
+	fmt.Println("db1")
+
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS workflow_instances (
             ts                TIMESTAMPTZ NOT NULL,
@@ -158,6 +167,7 @@ func (d *DB) CreateTables() error {
             FOREIGN KEY (ts, key) REFERENCES workflow_instances (ts, key) ON DELETE CASCADE
         )`,
 	}
+	fmt.Println("db2")
 
 	for _, query := range queries {
 		_, err := d.Exec(query)
@@ -165,6 +175,7 @@ func (d *DB) CreateTables() error {
 			return err
 		}
 	}
+	fmt.Println("db3")
 
 	return nil
 }
@@ -178,11 +189,13 @@ func (d *DB) GetDatabaseSize() (string, error) {
 	return dbSize, nil
 }
 
-func SetupDBConnection() (*sql.DB, error) {
-	connStr := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=%s TimeZone=%s schema=%s",
-		os.Getenv("DATABASE_USER"), os.Getenv("DATABASE_PASSWORD"), os.Getenv("DATABASE_NAME"),
-		os.Getenv("DATABASE_HOST"), os.Getenv("DATABASE_PORT"), os.Getenv("DATABASE_SSL"),
-		os.Getenv("DATABASE_TIMEZONE"), os.Getenv("DATABASE_SCHEMA"))
+func (d *DB) QueryRow(query string, args ...interface{}) *sql.Row {
+	return d.DB.QueryRow(query, args...)
+}
+
+func GetConnection() (*sql.DB, error) {
+	connStr := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=%s TimeZone=%s",
+		"postgres", "sQHiQuMQHOSwikBfFMnpD3i4k9Bq1KMn4kIiL7yjX8BGGJujSt2OOqJbm74qjSbY", "activation", "172.16.161.12", "5432", "disable", "Europe/Moscow")
 
 	dbConn, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -259,4 +272,54 @@ func (d *DB) CreateWorkflowInputOutputTable() error {
         )
     `)
 	return err
+}
+
+var pool *pgxpool.Pool
+
+var (
+	ContextProgram, _ = signal.NotifyContext(context.Background(), os.Interrupt)
+)
+
+func InitializePool() error {
+	// Initialize and configure the connection pool
+	var err error
+	config, err := pgxpool.ParseConfig("connection string")
+	if err != nil {
+		return err
+	}
+	pool, err = pgxpool.ConnectConfig(context.Background(), config)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func GetPool() (*pgxpool.Pool, error) {
+	if pool == nil {
+		// Initialize the pool if it's nil
+		if err := InitializePool(); err != nil {
+			return nil, err
+		}
+	}
+	return pool, nil
+}
+
+func Report(counter *atomic.Int64) {
+	start := time.Now()
+	prevTime := start
+	prevRowCount := int64(0)
+
+	for now := range time.NewTicker(reportInterval).C {
+		rCount := counter.Load()
+
+		took := now.Sub(prevTime)
+		rowRate := float64(rCount-prevRowCount) / took.Seconds()
+		overallRowRate := float64(rCount) / now.Sub(start).Seconds()
+		totalTook := now.Sub(start)
+
+		log.Printf("at %v, row rate %0.2f/sec (period), row rate %0.2f/sec (overall), %d total rows\n", totalTook-(totalTook%time.Second), rowRate, overallRowRate, rCount)
+
+		prevRowCount = rCount
+		prevTime = now
+	}
 }
