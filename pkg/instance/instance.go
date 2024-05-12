@@ -22,7 +22,7 @@ var (
 func TimeBucketsInst(endTime time.Time, generateCount, batchSize int64, deltaRecord time.Duration, wfID int64) chan pgx.CopyFromSource {
 	location, err := time.LoadLocation("UTC")
 	if err != nil {
-		log.Fatalf("Ошибка загрузки часового пояса: %v", err)
+		log.Fatalf("Error loading time zone: %v", err)
 	}
 
 	ch := make(chan pgx.CopyFromSource)
@@ -102,9 +102,8 @@ func (ctr *copyFromRows) Values() ([]interface{}, error) {
 
 	endTs := ctr.startTs.Add(10 * time.Second)
 	errorCode := getErrorCode()
-	//errorCodeStr := strconv.Itoa(errorCode)
 	idInstance := uuid.NewV4()
-	id := rand.Intn(900000) + 100001 // Генерация случайного числа от 100001 до 999999
+	id := rand.Intn(900000) + 100001
 	idStr := strconv.Itoa(id)
 	return []interface{}{ctr.startTs, ctr.startTs, endTs, ctr.startTs.UnixNano(), ctr.wfID, idInstance, idStr, int32(0), "", int32(1), int32(1), true, "80", "01_generated", "401015699499878", errorCode}, nil
 }

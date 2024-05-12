@@ -54,9 +54,8 @@ var (
 )
 
 func InitializePool() error {
-	// Initialize and configure the connection pool
 	var err error
-	config, err := pgxpool.ParseConfig("connection string")
+	config, err := pgxpool.ParseConfig("postgres://postgres:sQHiQuMQHOSwikBfFMnpD3i4k9Bq1KMn4kIiL7yjX8BGGJujSt2OOqJbm74qjSbY@172.16.161.12:5432/activation?sslmode=disable&timezone=Europe%2FMoscow&search_path=zeebe")
 	if err != nil {
 		return err
 	}
