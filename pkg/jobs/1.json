@@ -1,0 +1,507 @@
+{
+    "type": "1rbt_configuration",
+    "errorMessage": "Failed to send activated jobs to client",
+    "bpmnProcessId": "1operate_mobile_subscriber",
+    "processInstanceKey": 2251799813714035,
+    "elementInstanceKey": 2251799813714079,
+    "typeBuffer": { "expandable": false },
+    "workerBuffer": { "expandable": false },
+    "retryBackoff": 0,
+    "recurringTime": -1,
+    "customHeadersBuffer": { "expandable": false },
+    "errorMessageBuffer": { "expandable": false },
+    "errorCodeBuffer": { "expandable": false },
+    "bpmnProcessIdBuffer": { "expandable": false },
+    "processDefinitionVersion": 3,
+    "elementIdBuffer": { "expandable": false },
+    "elementId": "Activity_1fg76ky",
+    "customHeaders": { "skipAvailable": "true" },
+    "processDefinitionKey": 2251799813709280,
+    "deadline": 1695579469735,
+    "variablesBuffer": { "expandable": false },
+    "retries": 1,
+    "errorCode": "",
+    "variables": {
+      "RBTConfigurationResult": {
+        "payload": {
+          "category": "70",
+          "description": "Serviceable Mobile",
+          "note": [
+            { "id": "12345:WPDS", "text": "OptimaJobID" },
+            { "id": "138751:TEST", "text": "ProcessInstanceId" },
+            { "id": "SendToAttrinet", "text": "OptimaNodeName" },
+            { "id": "39095003", "text": "ServiceOrderId" },
+            { "id": "12345", "text": "ReasonOfAction" }
+          ],
+          "hasStarted": true,
+          "isBundle": false,
+          "isServiceEnabled": true,
+          "isStateful": true,
+          "serviceDate": "2021-12-07T08:53:50Z",
+          "startDate": "2020-04-25T22:48:05Z",
+          "feature": [
+            {
+              "id": "999999",
+              "isBundle": true,
+              "isEnabled": true,
+              "name": "InternalFCs",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "1",
+                  "name": "ResumeSubscriber_HSS",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "ResumeSubscriber_Internal_with_LTEI1",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "2",
+                  "name": "ResumeSubscriber_PCRF",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore",
+                  "sbiAddressInterface": "PCRF",
+                  "undoCommand": ""
+                }
+              ]
+            },
+            {
+              "id": "1",
+              "isBundle": false,
+              "isEnabled": false,
+              "name": "Bright_4990_Specific_Services_PS",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "2",
+                  "name": "pcrf_129",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "PCRF",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "3",
+                  "name": "pcrf_053",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "PCRF",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "4",
+                  "name": "pcrf_054",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "PCRF",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "5",
+                  "name": "LTEI1",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                }
+              ]
+            },
+            {
+              "id": "6",
+              "isBundle": false,
+              "isEnabled": false,
+              "name": "Voice",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "7",
+                  "name": "CLIR",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "8",
+                  "name": "CC",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "9",
+                  "name": "CW",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "10",
+                  "name": "CLIPCL",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "11",
+                  "name": "CH",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "12",
+                  "name": "VOICE",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "0",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "13",
+                  "name": "CB",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                }
+              ]
+            },
+            {
+              "id": "14",
+              "isBundle": false,
+              "isEnabled": false,
+              "name": "Data",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "15",
+                  "name": "GPRSI",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "16",
+                  "name": "GPRSD1",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                }
+              ]
+            },
+            {
+              "id": "17",
+              "isBundle": false,
+              "isEnabled": false,
+              "name": "Messaging",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "18",
+                  "name": "SMSO",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "19",
+                  "name": "SMST",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                }
+              ]
+            },
+            {
+              "id": "20",
+              "isBundle": false,
+              "isEnabled": false,
+              "name": "Roaming",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "21",
+                  "name": "ROAMW",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                }
+              ]
+            },
+            {
+              "id": "22",
+              "isBundle": false,
+              "isEnabled": false,
+              "name": "International",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "23",
+                  "name": "CRI",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_ResumeSubscriber_Internal",
+                  "sbiAddressInterface": "HSS",
+                  "undoCommand": ""
+                }
+              ]
+            },
+            {
+              "id": "24",
+              "isBundle": false,
+              "isEnabled": false,
+              "name": "Mobile_Financial_Services",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "25",
+                  "name": "MFS",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Unblock",
+                  "sbiAddressInterface": "MFS",
+                  "undoCommand": ""
+                }
+              ]
+            },
+            {
+              "id": "1666",
+              "isBundle": false,
+              "isEnabled": false,
+              "name": "Additional Services",
+              "@type": "Feature",
+              "featureCharacteristic": [
+                {
+                  "id": "1778",
+                  "name": "BLST",
+                  "valueType": "Boolean",
+                  "value": "true",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore_suspend_resume_BLST",
+                  "sbiAddressInterface": "SMS-STORM",
+                  "undoCommand": ""
+                },
+                {
+                  "id": "1777",
+                  "name": "ST",
+                  "valueType": "String",
+                  "value": "Mobile",
+                  "@baseType": "FeatureCharacteristic",
+                  "@state": null,
+                  "provisioning": true,
+                  "mandatory": false,
+                  "executionOrder": "1",
+                  "whatToExecute": "DO",
+                  "doCommand": "Ignore1",
+                  "sbiAddressInterface": "IRS",
+                  "undoCommand": ""
+                }
+              ]
+            }
+          ],
+          "relatedParty": null,
+          "serviceCharacteristic": [
+            {
+              "id": "1",
+              "name": "MSISDN",
+              "valueType": "string",
+              "value": "71452365556"
+            }
+          ],
+          "supportingService": [
+            {
+              "serviceCharacteristic": [
+                {
+                  "id": "2",
+                  "name": "IMSI",
+                  "valueType": "string",
+                  "value": "401015725844258"
+                },
+                {
+                  "id": "3",
+                  "name": "NGP Type",
+                  "valueType": "string",
+                  "value": "E"
+                }
+              ],
+              "state": "ACTIVE",
+              "@type": "Service",
+              "parentOptimaAccountNumber": "12332",
+              "billCycle": "Monthly",
+              "brand": "Regular",
+              "parentAccountType": "Prepaid",
+              "parentAccountCategory": null
+            }
+          ],
+          "serviceSpecification": {
+            "id": "cfs45",
+            "name": "c_Mobile",
+            "@type": "serviceSpecification",
+            "@referredType": "ServiceSpecification"
+          },
+          "state": "Resume",
+          "@type": "Service"
+        },
+        "errorCode": "ATR000",
+        "errorReason": "",
+        "errorDescription": ""
+      }
+    },
+    "worker": "RBT Configuration",
+    "length": 6988,
+    "encodedLength": 6988
+  }
+  

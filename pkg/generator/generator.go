@@ -5,14 +5,16 @@ import (
 	_ "embed"
 	"log"
 	"os"
+
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"db_generator/pkg/db"
 	input_output "db_generator/pkg/input-output"
 	"db_generator/pkg/instance"
+
+	jobs "db_generator/pkg/jobs"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 )
@@ -26,18 +28,18 @@ const (
 	PathOutput = "./io-data/wf_output.json"
 )
 
-func currentRowCount() int64 {
+func currentRowCount(pool *pgxpool.Pool) int64 {
 	log.Println("Asking current row count...")
-	conn, err := db.GetConnection()
+	conn, err := pool.Acquire(context.Background())
 	if err != nil {
-		log.Panicf("Error getting connection: %v", err)
+		log.Panicf("Error acquiring connection from pool: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Release()
 
-	latestTimestamp := latestTimestamp()
+	latestTimestamp := latestTimestamp(pool)
 
 	var current int64
-	if err := conn.QueryRow("select count(*) from workflow_instances where ts < $1", latestTimestamp).Scan(&current); err != nil {
+	if err := conn.QueryRow(context.Background(), "select count(*) from workflow_instances where ts < $1", latestTimestamp).Scan(&current); err != nil {
 		log.Panicf("Error getting current row count: %v", err)
 	}
 
@@ -45,16 +47,17 @@ func currentRowCount() int64 {
 	return current
 }
 
-func latestTimestamp() time.Time {
+func latestTimestamp(pool *pgxpool.Pool) time.Time {
 	log.Println("Latest row in database...")
 
-	conn, err := db.GetConnection()
+	conn, err := pool.Acquire(context.Background())
 	if err != nil {
-		log.Panicf("Error getting connection: %v", err)
+		log.Panicf("Error acquiring connection from pool: %v", err)
 	}
-	defer conn.Close()
+	defer conn.Release()
+
 	var latest time.Time
-	if err := conn.QueryRow("select ts from workflow_instances order by ts limit 1").Scan(&latest); err != nil {
+	if err := conn.QueryRow(context.Background(), "select ts from workflow_instances order by ts limit 1").Scan(&latest); err != nil {
 		log.Printf("Error getting current row count: %v", err)
 		latest = time.Now()
 	}
@@ -82,10 +85,11 @@ func Generate(instancesTotal int64, workersNum int, wfID int64, batchSize int64,
 	}
 	defer pool.Close()
 
-	latest := latestTimestamp()
-	generateCount := instancesTotal - currentRowCount()
+	latest := latestTimestamp(pool)
+	generateCount := instancesTotal - currentRowCount(pool)
 	sourcesChInst := instance.TimeBucketsInst(latest, generateCount, batchSize, deltaRecord, wfID)
 	sourcesChIO := input_output.TimeBucketsIO(latest, generateCount, batchSize, deltaRecord, &wfInput, &wfOutput)
+	sourcesChJobs := jobs.TimeBucketsJobs(latest, generateCount, batchSize, deltaRecord)
 
 	var wg sync.WaitGroup
 	for i := 0; i < workersNum; i++ {
@@ -99,6 +103,13 @@ func Generate(instancesTotal int64, workersNum int, wfID int64, batchSize int64,
 			defer wg.Done()
 			input_output.ProcessCopyIO(sourcesChIO, pool)
 		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			jobs.ProcessCopyJobs(sourcesChJobs, pool)
+		}()
+
 	}
 
 	start := time.Now()
