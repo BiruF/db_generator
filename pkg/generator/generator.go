@@ -14,7 +14,7 @@ import (
 	input_output "db_generator/pkg/input-output"
 	"db_generator/pkg/instance"
 
-	jobs "db_generator/pkg/jobs"
+	//	jobs "db_generator/pkg/jobs"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 )
@@ -66,7 +66,7 @@ func latestTimestamp(pool *pgxpool.Pool) time.Time {
 	return latest
 }
 
-func Generate(instancesTotal int64, workersNum int, wfID int64, batchSize int64, deltaRecord time.Duration) error {
+func Generate(instancesTotal int64, workersNum int, wfID int64, batchSize int64, deltaRecord time.Duration, postgresUrl string) error {
 
 	absInputPath, _ := filepath.Abs(PathInput)
 	absOutputPath, _ := filepath.Abs(PathOutput)
@@ -78,8 +78,7 @@ func Generate(instancesTotal int64, workersNum int, wfID int64, batchSize int64,
 	if err != nil {
 		log.Fatalf("Error path: %v", err)
 	}
-
-	pool, err := pgxpool.Connect(context.Background(), "postgres://postgres:sQHiQuMQHOSwikBfFMnpD3i4k9Bq1KMn4kIiL7yjX8BGGJujSt2OOqJbm74qjSbY@172.16.161.12:5432/activation?sslmode=disable&timezone=Europe%2FMoscow&search_path=zeebe")
+	pool, err := pgxpool.Connect(context.Background(), postgresUrl)
 	if err != nil {
 		log.Fatalf("Error getting connection pool: %v", err)
 	}
@@ -89,7 +88,7 @@ func Generate(instancesTotal int64, workersNum int, wfID int64, batchSize int64,
 	generateCount := instancesTotal - currentRowCount(pool)
 	sourcesChInst := instance.TimeBucketsInst(latest, generateCount, batchSize, deltaRecord, wfID)
 	sourcesChIO := input_output.TimeBucketsIO(latest, generateCount, batchSize, deltaRecord, &wfInput, &wfOutput)
-	sourcesChJobs := jobs.TimeBucketsJobs(latest, generateCount, batchSize, deltaRecord)
+	//sourcesChJobs := jobs.TimeBucketsJobs(latest, generateCount, batchSize, deltaRecord)
 
 	var wg sync.WaitGroup
 	for i := 0; i < workersNum; i++ {
@@ -103,13 +102,12 @@ func Generate(instancesTotal int64, workersNum int, wfID int64, batchSize int64,
 			defer wg.Done()
 			input_output.ProcessCopyIO(sourcesChIO, pool)
 		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			jobs.ProcessCopyJobs(sourcesChJobs, pool)
-		}()
-
+		/*	wg.Add(1)
+			go func() {
+				defer wg.Done()
+				jobs.ProcessCopyJobs(sourcesChJobs, pool)
+			}()
+		*/
 	}
 
 	start := time.Now()
